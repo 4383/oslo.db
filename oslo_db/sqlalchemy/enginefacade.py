@@ -946,7 +946,7 @@ class _TransactionContextManager(object):
         """
 
         if self._mode is _WRITER:
-            raise TypeError("Setting async on a WRITER makes no sense")
+            raise TypeError("Setting asynchronous on a WRITER makes no sense")
         return self._clone(allow_async=True)
 
     @property
@@ -965,12 +965,29 @@ class _TransactionContextManager(object):
         return self._clone(connection=True)
 
     @property
-    def async(self):
+    def asynchronous(self):
         """Modifier to set a READER operation to ASYNC_READER."""
 
         if self._mode is _WRITER:
-            raise TypeError("Setting async on a WRITER makes no sense")
+            raise TypeError("Setting asynchronous on a WRITER makes no sense")
         return self._clone(mode=_ASYNC_READER)
+
+    @property
+    def async(self):
+        """Modifier to set a READER operation to ASYNC_READER.
+
+        .. deprecated:: 4.40.0
+            Please use \
+            :mod:`oslo_db.sqlalchemy.enginefacade.reader.asynchronous` \
+            for new development.
+        """
+
+        warnings.warn(
+            "oslo_db.sqlalchemy.enginefacade.reader.async is deprecated;"
+            "please use oslo_db.sqlalchemy.enginefacade.reader.asynchronous",
+            exception.OsloDBDeprecationWarning,
+            stacklevel=2)
+        return self.asynchronous
 
     def using(self, context):
         """Provide a context manager block that will use the given context."""

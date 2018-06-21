@@ -605,12 +605,21 @@ class MockFacadeTest(oslo_test_base.BaseTestCase):
             exc.args[0]
         )
 
+    def test_asynchronous_on_writer_raises(self):
+        exc = self.assertRaises(
+            TypeError, getattr, enginefacade.writer, "asynchronous"
+        )
+        self.assertEqual(
+            "Setting asynchronous on a WRITER makes no sense",
+            exc.args[0]
+        )
+
     def test_async_on_writer_raises(self):
         exc = self.assertRaises(
             TypeError, getattr, enginefacade.writer, "async"
         )
         self.assertEqual(
-            "Setting async on a WRITER makes no sense",
+            "Setting asynchronous on a WRITER makes no sense",
             exc.args[0]
         )
 
@@ -644,10 +653,51 @@ class MockFacadeTest(oslo_test_base.BaseTestCase):
             exc.args[0]
         )
 
+    def test_reader_nested_in_asynchronous_reader_raises(self):
+        context = oslo_context.RequestContext()
+
+        @enginefacade.reader.asynchronous
+        def go1(context):
+            context.session.execute("test1")
+            go2(context)
+
+        @enginefacade.reader
+        def go2(context):
+            context.session.execute("test2")
+
+        exc = self.assertRaises(
+            TypeError, go1, context
+        )
+        self.assertEqual(
+            "Can't upgrade an ASYNC_READER transaction "
+            "to a READER mid-transaction",
+            exc.args[0]
+        )
+
     def test_reader_allow_async_nested_in_async_reader(self):
         context = oslo_context.RequestContext()
 
         @enginefacade.reader.async
+        def go1(context):
+            context.session.execute("test1")
+            go2(context)
+
+        @enginefacade.reader.allow_async
+        def go2(context):
+            context.session.execute("test2")
+
+        go1(context)
+
+        with self._assert_engines() as engines:
+            with self._assert_makers(engines) as makers:
+                with self._assert_async_reader_session(makers) as session:
+                    session.execute("test1")
+                    session.execute("test2")
+
+    def test_reader_allow_asynchronous_nested_in_async_reader(self):
+        context = oslo_context.RequestContext()
+
+        @enginefacade.reader.asynchronous
         def go1(context):
             context.session.execute("test1")
             go2(context)
@@ -719,6 +769,27 @@ class MockFacadeTest(oslo_test_base.BaseTestCase):
             exc.args[0]
         )
 
+    def test_writer_nested_in_asynchronous_reader_raises(self):
+        context = oslo_context.RequestContext()
+
+        @enginefacade.reader.asynchronous
+        def go1(context):
+            context.session.execute("test1")
+            go2(context)
+
+        @enginefacade.writer
+        def go2(context):
+            context.session.execute("test2")
+
+        exc = self.assertRaises(
+            TypeError, go1, context
+        )
+        self.assertEqual(
+            "Can't upgrade an ASYNC_READER transaction to a "
+            "WRITER mid-transaction",
+            exc.args[0]
+        )
+
     def test_reader_then_writer_ok(self):
         context = oslo_context.RequestContext()
 
@@ -739,6 +810,28 @@ class MockFacadeTest(oslo_test_base.BaseTestCase):
                         makers, assert_calls=False) as session:
                     session.execute("test1")
                 with self._assert_writer_session(makers) as session:
+                    session.execute("test2")
+
+    def test_asynchronous_reader_then_reader_ok(self):
+        context = oslo_context.RequestContext()
+
+        @enginefacade.reader.asynchronous
+        def go1(context):
+            context.session.execute("test1")
+
+        @enginefacade.reader
+        def go2(context):
+            context.session.execute("test2")
+
+        go1(context)
+        go2(context)
+
+        with self._assert_engines() as engines:
+            with self._assert_makers(engines) as makers:
+                with self._assert_async_reader_session(
+                        makers, assert_calls=False) as session:
+                    session.execute("test1")
+                with self._assert_reader_session(makers) as session:
                     session.execute("test2")
 
     def test_async_reader_then_reader_ok(self):
